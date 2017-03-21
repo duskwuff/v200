@@ -1,0 +1,18 @@
+/v200
+
+*.o
+*~
+
+screen.pbm
+memory.bin
+flash.bin
+
+/roms/
+
+# Musashi generated sources
+/m68kmake
+/m68kops.c
+/m68kops.h
+/m68kopac.c
+/m68kopdm.c
+/m68kopnz.c
