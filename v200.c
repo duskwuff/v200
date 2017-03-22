@@ -8,6 +8,9 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
+#include <SDL.h>
+#include <SDL_keycode.h>
+
 #include "m68k.h"
 
 #define RAM_SIZE    (256 * 1024)
@@ -16,10 +19,25 @@
 #define RAM_BASE    0x000000
 #define FLASH_BASE  0x200000
 
-uint64_t cycles = 0;
+#define SCREEN_WIDTH    240
+#define SCREEN_HEIGHT   128
+
+#define SCREEN_PADDING  8
+#define SCREEN_SCALE    2
+
+/* 12 MHz = 12k cycles / 1 ms */
+#define CYCLES_PER_TICK 12000
+
+/* 40 Hz = 25 ms / frame */
+#define FRAME_TICKS     25
+
+#define FRAME_CYCLES    (FRAME_TICKS * CYCLES_PER_TICK)
 
 uint8_t io[32];
 void *ti_ram = NULL, *ti_flash = NULL;
+
+uint8_t keyboard_state[81] = {0};
+uint8_t keyboard_touched = 0;
 
 //////////////////////////////////////////////////////////////////////////////
 
@@ -103,14 +121,32 @@ void write16(void *buf, int offset, uint16_t value)
     *p = htons(value);
 }
 
+uint8_t io_getkbd(void)
+{
+    uint16_t mask = (io[0x18] << 8) | io[0x19];
+    uint8_t result = 0;
+    for (int row = 0; row < 10; row++) {
+        if (!(mask & (1 << row))) {
+            for (int col = 0; col < 8; col++) {
+                if (keyboard_state[row * 8 + col])
+                    result |= 1 << (7 - col);
+            }
+        }
+    }
+    return ~result;
+}
+
 uint8_t io_read8(uint32_t addr)
 {
     addr &= 0x1f;
 
     uint8_t val = io[addr];
     switch (addr) {
-        case 0:
+        case 0x00:
             val |= 4;
+            break;
+        case 0x1b:
+            val = io_getkbd();
             break;
     }
     return val;
@@ -319,19 +355,114 @@ void read_rom(const char *path)
     // The calculator seems to boot without, but it's probably not happy
 }
 
+int sdl_to_ti_kbd(SDL_Keycode key)
+{
+    switch (key) {
+        case SDLK_DOWN:     return 0;
+        case SDLK_RIGHT:    return 1;
+        case SDLK_UP:       return 2;
+        case SDLK_LEFT:     return 3;
+                            // hand = 4???
+        case SDLK_LSHIFT:
+        case SDLK_RSHIFT:   return 5; // shift
+        case SDLK_LALT:
+        case SDLK_RALT:     return 6; // diamond
+        case SDLK_LCTRL:
+        case SDLK_RCTRL:    return 7; // 2nd
+
+        case SDLK_3:        return 8;
+        case SDLK_2:        return 9;
+        case SDLK_1:        return 10;
+        case SDLK_F8:       return 11;
+        case SDLK_w:        return 12;
+        case SDLK_s:        return 13;
+        case SDLK_z:        return 14;
+                            // no key @ 15
+
+        case SDLK_6:        return 16;
+        case SDLK_5:        return 17;
+        case SDLK_4:        return 18;
+        case SDLK_F3:       return 19;
+        case SDLK_e:        return 20;
+        case SDLK_d:        return 21;
+        case SDLK_x:        return 22;
+                            // no key @ 23
+
+        case SDLK_9:        return 24;
+        case SDLK_8:        return 25;
+        case SDLK_7:        return 26;
+        case SDLK_F7:       return 27;
+        case SDLK_r:        return 28;
+        case SDLK_f:        return 29;
+        case SDLK_c:        return 30;
+        case SDLK_BACKSLASH: return 31; // store
+
+        case SDLK_COMMA:    return 32;
+        case SDLK_RIGHTBRACKET: return 33; // paren right
+        case SDLK_LEFTBRACKET:  return 34; // paren left
+        case SDLK_F2:       return 35;
+        case SDLK_t:        return 36;
+        case SDLK_g:        return 37;
+        case SDLK_v:        return 38;
+        case SDLK_SPACE:    return 39;
+
+                            // tan = 40
+                            // cos = 41
+                            // sin = 42
+        case SDLK_F6:       return 43;
+        case SDLK_y:        return 44;
+        case SDLK_h:        return 45;
+        case SDLK_b:        return 46;
+        case SDLK_KP_DIVIDE: return 47;
+
+        case SDLK_p:        return 48;
+        case SDLK_KP_ENTER: return 49;
+                            // ln = 50
+        case SDLK_F1:       return 51;
+        case SDLK_u:        return 52;
+        case SDLK_j:        return 53;
+        case SDLK_n:        return 54;
+                            // ^ = 55
+
+        case SDLK_KP_MULTIPLY: return 56;
+        case SDLK_INSERT:   return 57; // apps
+        case SDLK_DELETE:   return 58; // clear
+        case SDLK_F5:       return 59;
+        case SDLK_i:        return 60;
+        case SDLK_k:        return 61;
+        case SDLK_m:        return 62;
+        case SDLK_EQUALS:   return 63;
+
+                            // no key @ 64
+        case SDLK_ESCAPE:   return 65;
+                            // mode = 66
+        case SDLK_KP_PLUS:  return 67;
+        case SDLK_o:        return 68;
+        case SDLK_l:        return 69;
+        case SDLK_SLASH:    return 70; // theta
+        case SDLK_BACKSPACE: return 71;
+
+                            // negate = 72
+        case SDLK_PERIOD:   return 73;
+        case SDLK_0:        return 74;
+        case SDLK_F4:       return 75;
+        case SDLK_q:        return 76;
+        case SDLK_a:        return 77;
+        case SDLK_RETURN:   return 78;
+        case SDLK_MINUS:
+        case SDLK_KP_MINUS: return 79;
+
+        default:            return -1;
+    }
+}
+
 int main(int argc, char **argv)
 {
-    if (argc != 3) {
+    if (argc != 2) {
         fprintf(stderr,
                 "Usage (for now):\n"
-                "  v200 <os.v2u> <cycle count>\n"
+                "  v200 <os.v2u>\n"
                );
-        return 1;
-    }
-
-    int64_t stop_after_cycles = strtoll(argv[2], NULL, 10);
-    if (stop_after_cycles <= 0) {
-        fprintf(stderr, "Unreasonable looking cycle count\n");
         return 1;
     }
 
@@ -347,17 +478,102 @@ int main(int argc, char **argv)
     m68k_set_reg(M68K_REG_SP, m68k_read_memory_32(FLASH_BASE + 0));
     m68k_set_reg(M68K_REG_PC, m68k_read_memory_32(FLASH_BASE + 4));
 
-    for (;;) {
-        int n = m68k_execute(10000);
-        if (n == 0)
-            break;
-        cycles += n;
-        if (cycles > stop_after_cycles)
-            break;
+    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+        fprintf(stderr, "Failed to initialize SDL: %s\n", SDL_GetError());
+        return 1;
     }
 
-    cpu_whereami();
-    dump_screen();
+    SDL_Window *window = SDL_CreateWindow(
+            "v200",
+            SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+            SCREEN_WIDTH * SCREEN_SCALE + SCREEN_PADDING * 2,
+            SCREEN_HEIGHT * SCREEN_SCALE + SCREEN_PADDING * 2,
+            SDL_WINDOW_SHOWN
+            );
+    SDL_Surface *window_surface = SDL_GetWindowSurface(window);
+
+    SDL_Rect dstrect = {
+        .x = SCREEN_PADDING,
+        .y = SCREEN_PADDING,
+        .w = SCREEN_WIDTH * SCREEN_SCALE,
+        .h = SCREEN_HEIGHT * SCREEN_SCALE,
+    };
+
+    SDL_Surface *screen_surface = SDL_CreateRGBSurface(
+            0,
+            SCREEN_WIDTH,
+            SCREEN_HEIGHT,
+            32,
+            0, 0, 0, 0
+            );
+
+    uint32_t white = SDL_MapRGBA(screen_surface->format, 255, 255, 255, 255);
+    uint32_t black = SDL_MapRGBA(screen_surface->format, 0,   0,   0,   255);
+    uint32_t gray  = SDL_MapRGBA(screen_surface->format, 128, 128, 128, 255);
+
+    uint32_t last_tick = SDL_GetTicks();
+
+    for (;;) {
+        uint32_t next_tick = last_tick + FRAME_TICKS;
+
+        int n = m68k_execute(FRAME_CYCLES);
+        if (n == 0)
+            break; // ???
+
+        SDL_LockSurface(screen_surface);
+        {
+
+            uint8_t  *src = ti_ram + 0x4c00;
+            uint32_t *dst = screen_surface->pixels;
+
+            for (int i = 0; i < SCREEN_HEIGHT; i++) {
+                for (int j = 0; j < SCREEN_WIDTH; j += 8) {
+                    uint8_t b = *src++;
+                    for (int k = 0; k < 8; k++) {
+                        *dst++ = (b & 0x80) ? black : white;
+                        b <<= 1;
+                    }
+                }
+            }
+        }
+        SDL_UnlockSurface(screen_surface);
+
+        SDL_FillRect(window_surface, NULL, white);
+        SDL_BlitScaled(screen_surface, NULL, window_surface, &dstrect);
+        SDL_UpdateWindowSurface(window);
+
+        uint32_t now_tick = SDL_GetTicks();
+        do {
+            uint32_t wait_ticks = next_tick - now_tick;
+            if (wait_ticks < 5) wait_ticks = 5;
+
+            SDL_Event ev;
+            if (SDL_WaitEventTimeout(&ev, wait_ticks)) {
+                int key;
+                switch (ev.type) {
+                    case SDL_QUIT:
+                        return 0;
+                    case SDL_KEYDOWN:
+                    case SDL_KEYUP:
+                        key = sdl_to_ti_kbd(ev.key.keysym.sym);
+                        if (key >= 0) {
+                            keyboard_state[key] = (ev.key.state == SDL_PRESSED);
+                        }
+                        break;
+                }
+            }
+
+            now_tick = SDL_GetTicks();
+        } while (now_tick < next_tick);
+
+        last_tick = now_tick;
+
+        // FIXME: This is a hack. Need to implement real timers.
+        static int i = 0;
+        if (i++ > 30) {
+            m68k_set_irq(1);
+        }
+    }
 
     return 0;
 }

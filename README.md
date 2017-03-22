@@ -3,21 +3,44 @@ V200: A TI Voyage-200 emulator
 To do and notice
 ================
 
-1. [Download the OS from TI's web site](https://education.ti.com/en/products/calculators/graphing-calculators/voyage-200?category=resources). The current (and probably last ever) version is v3.10, with SHA256 sum:
+1. Install [SDL 2.0](https://www.libsdl.org/).
+
+2. [Download the OS from TI's web site](https://education.ti.com/en/products/calculators/graphing-calculators/voyage-200?category=resources). The current (and probably last ever) version is v3.10, with SHA256 sum:
 
         a819756f84bcb5c60729b9c2fe842473d3460ae5cd211aca1d8da4e09a04dcf3  os.v2u
 
-2. `make`
+3. `make`
 
-3. `./v200 os.v2u 80000000`
-
-4. Check out the sweet screenshot in `screen.pbm`.
+4. `./v200 os.v2u`
 
 
-Wait, that's it?
-----------------
+Why can't I type properly?
+--------------------------
 
-For now, yeah.
+The Voyage-200 implements keyboard debouncing in software, so you'll have to
+type very deliberately, as if you're using a little chiclet keyboard...
+
+You will need an extended keyboard to hit some keys, and others aren't mapped
+at all. This will probably be fixed eventually... maybe. In the meantime, read
+the source for details.
+
+
+Why doesn't the mouse work?
+---------------------------
+
+This isn't a touchscreen device.
+
+
+How do I save state?
+--------------------
+
+You can't yet. Maybe later.
+
+
+How do I upload/download files?
+-------------------------------
+
+You can't yet. Don't hold your breath.
 
 
 License

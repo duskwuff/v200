@@ -2,6 +2,9 @@ CC = gcc
 CFLAGS = -Wall -ggdb
 LDLIBS =
 
+CFLAGS += $(shell sdl2-config --cflags)
+LDLIBS += $(shell sdl2-config --libs)
+
 MUSASHI_C += m68kcpu.c
 MUSASHI_C += $(MUSASHI_GEN_C)
 MUSASHI_GEN_C = m68kops.c m68kopac.c m68kopdm.c m68kopnz.c
